@@ -1,7 +1,8 @@
 import numpy as np
+import pytest
 
 from epidemic_models import (
-    dirichlet_approximation,
+    fit_exponential_series,
     rk4_step,
     seir_rhs,
     sir_rhs,
@@ -31,17 +32,26 @@ def test_rk4_step_is_stable_for_sir():
     assert np.isclose(y1.sum(), 1.0, atol=1e-8)
 
 
-def test_dirichlet_approximation_matches_reference_on_short_interval():
+def test_fit_exponential_series_matches_reference_on_short_interval():
     times = np.linspace(0.0, 15.0, 200)
     y_rk4 = solve_sir(beta=0.6, gamma=0.2, s0=0.9, i0=0.1, r0=0.0, times=times)
-    y_dir = dirichlet_approximation(
+    y_fit = fit_exponential_series(
         times,
         target=y_rk4,
         n_terms=8,
         decay=0.25,
     )
-    rel_error = np.linalg.norm(y_rk4 - y_dir, ord=np.inf) / np.linalg.norm(y_rk4, ord=np.inf)
+    rel_error = np.linalg.norm(y_rk4 - y_fit, ord=np.inf) / np.linalg.norm(y_rk4, ord=np.inf)
     assert rel_error < 0.25
+
+
+def test_fit_exponential_series_rejects_invalid_inputs():
+    times = np.linspace(0.0, 1.0, 5)
+    target = np.array([0.1, 0.2, 0.3, 0.4, 0.5])
+    with pytest.raises(ValueError, match="times"):
+        fit_exponential_series(np.array([0.0, -1.0, 1.0]), target)
+    with pytest.raises(ValueError, match="n_terms|decay"):
+        fit_exponential_series(times, target, n_terms=0)
 
 
 def test_seir_solution_stays_positive_and_conservative():

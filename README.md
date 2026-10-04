@@ -10,22 +10,46 @@ integrator, and a finite exponential basis is used as a practical comparison too
 - SEIR model with RK4 integration
 - a least-squares fit on a finite exponential basis, used as a numerical comparison
 - deterministic validation tests for positivity and conservation
+- explicit validation of time grids, model parameters, and non-finite outputs
+
+## State variables and assumptions
+
+The state variables are proportions of a closed population, not absolute counts:
+
+- S + I + R = 1 for SIR,
+- S + E + I + R = 1 for SEIR.
+
+This means a trajectory is interpreted as a normalized population vector. If you want
+absolute counts, rescale the initial conditions and solver outputs externally.
 
 ## Important limitation
 
 This repository does not yet implement a standalone Dirichlet-series solver derived
-independently from the report. The current `dirichlet_approximation()` routine is a
+independently from the report. The current `fit_exponential_series()` routine is a
 finite-dimensional least-squares fit against the RK4 trajectory. It is useful for
 numerical comparison, but it should not be interpreted as a complete derivation of the
 report's analytical method without the missing coefficients and derivation from the
 source document.
 
-## Run
+## Installation and run
 
 ```bash
+python3 -m pip install -e .[test]
 python3 epidemic_models.py
 python3 -m pytest -q
 ```
+
+## Numerical caution
+
+- RK4 is a valid reference scheme, but it does not guarantee positivity for an
+  arbitrary time step.
+- A sign change in the state vector indicates a time step that is too large for the
+  chosen regime or an unstable configuration.
+- The displayed fit error is a relative sup-norm error between the RK4 trajectory and
+  the finite exponential approximation; it is not a proof of a closed-form analytical
+  solution.
+- The RK4 integration error and the exponential-series fitting error are distinct
+  quantities and should not be conflated.
 
 ## Scope and honesty
 
