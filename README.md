@@ -1,37 +1,31 @@
-# sir-seir-dirichlet-series
-# SIR/SEIR Models with Dirichlet Series
+# SIR/SEIR with a Dirichlet-style approximation
 
-Research project on semi-analytical solutions of SIR and SEIR epidemiological models using Dirichlet series expansions.
+This repository contains a minimal executable core for the report's SIR and SEIR models.
+It is intentionally narrow and reproducible: the models are solved with a reference RK4
+integrator, and a finite exponential series is used as a lightweight Dirichlet-style
+approximation for comparison.
 
-## Overview
+## Included
 
-This project investigates an alternative approach to solving epidemiological models based on Dirichlet series representations. The method provides semi-analytical approximations of the solutions and allows the study of their long-term behavior.
+- SIR model with RK4 integration
+- SEIR model with RK4 integration
+- truncated exponential approximation in the spirit of the report
+- deterministic validation tests for positivity and conservation
 
-## Topics
+## Run
 
-* SIR Model
-* SEIR Model
-* Dirichlet Series
-* Dynamical Systems
-* Numerical Analysis
-* Mathematical Modeling
+```bash
+python epidemic_models.py
+python -m pytest -q
+```
 
-## Main Results
+## Scope and honesty
 
-* Derivation of semi-analytical solutions for SIR and SEIR models
-* Recursive computation of Dirichlet coefficients
-* Numerical simulations
-* Comparison with the Runge-Kutta 4 (RK4) method
-* Error analysis and convergence study
+This is a minimal executable version consistent with the report, not an exhaustive
+implementation of the full theoretical derivation. The goal is to provide a faithful,
+reproducible baseline that can be audited and extended rationally.
 
-## Repository Content
+## Report
 
-* Mathematical report (PDF)
-* Theoretical developments
-* Numerical experiments
-* Figures and results
-
-## Status
-
-Mathematical report completed. Code implementation and additional experiments will be added in future updates.
+The PDF report is kept in `rapport/` and `references/`.
 
