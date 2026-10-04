@@ -96,10 +96,12 @@ def dirichlet_approximation(
     n_terms: int = 8,
     decay: float = 0.25,
 ) -> np.ndarray:
-    """Fit a truncated exponential series to a time-dependent target.
+    """Fit a truncated exponential basis to a time-dependent target.
 
-    The basis is exp(-(k * decay) * t), which matches the report's Dirichlet-style
-    idea while staying numerically robust and reproducible.
+    This is intentionally a numerical comparison step rather than a full independent
+    derivation of a Dirichlet-series solver. It fits a finite exponential basis to an
+    RK4 trajectory, which is useful to quantify approximation quality without claiming
+    a closed-form analytical solution.
     """
     times = np.asarray(times, dtype=float)
     target = np.asarray(target, dtype=float)
