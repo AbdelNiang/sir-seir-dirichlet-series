@@ -18,13 +18,13 @@ def _validate_times(times: np.ndarray) -> np.ndarray:
         raise ValueError("times must be a non-empty 1D array")
     if not np.all(np.isfinite(times)):
         raise ValueError("times must contain only finite values")
-    if np.any(np.diff(times) < 0):
-        raise ValueError("times must be non-decreasing")
+    if np.any(np.diff(times) <= 0):
+        raise ValueError("times must be strictly increasing")
     return times
 
 
 def _validate_positive_scalar(value: float, name: str, *, allow_zero: bool = False) -> float:
-    if not np.isfinite(value):
+    if np.asarray(value).ndim != 0 or not np.isfinite(value):
         raise ValueError(f"{name} must be finite")
     if allow_zero:
         if value < 0:
@@ -34,18 +34,39 @@ def _validate_positive_scalar(value: float, name: str, *, allow_zero: bool = Fal
     return float(value)
 
 
-def sir_rhs(t: float, y: np.ndarray, beta: float, gamma: float) -> np.ndarray:
+def _validate_initial_state(values: list[float]) -> np.ndarray:
+    state = np.asarray(values, dtype=float)
+    if not np.all(np.isfinite(state)):
+        raise ValueError("initial state must contain only finite values")
+    if np.any(state < 0.0):
+        raise ValueError("initial state components must be non-negative")
+    if not np.isclose(state.sum(), 1.0, rtol=1e-10, atol=1e-12):
+        raise ValueError("initial state proportions must sum to 1")
+    return state
+
+
+def _validate_solution(solution: np.ndarray) -> np.ndarray:
+    if not np.all(np.isfinite(solution)):
+        raise FloatingPointError("Non-finite values encountered during RK4 integration")
+    if np.any(solution < -1e-12):
+        raise FloatingPointError("RK4 integration produced negative values; reduce the time step")
+    if not np.allclose(solution.sum(axis=1), 1.0, rtol=1e-8, atol=1e-10):
+        raise FloatingPointError("RK4 integration failed to conserve total population")
+    return solution
+
+
+def sir_rhs(_t: float, y: np.ndarray, beta: float, gamma: float) -> np.ndarray:
     """Right-hand side of the SIR model. Here y is a population vector in proportions."""
-    s, i, r = y
+    s, i, _r = y
     return np.array(
         [-beta * s * i, beta * s * i - gamma * i, gamma * i],
         dtype=float,
     )
 
 
-def seir_rhs(t: float, y: np.ndarray, beta: float, sigma: float, gamma: float) -> np.ndarray:
+def seir_rhs(_t: float, y: np.ndarray, beta: float, sigma: float, gamma: float) -> np.ndarray:
     """Right-hand side of the SEIR model. Here y is a population vector in proportions."""
-    s, e, i, r = y
+    s, e, i, _r = y
     return np.array(
         [-beta * s * i, beta * s * i - sigma * e, sigma * e - gamma * i, gamma * i],
         dtype=float,
@@ -58,16 +79,23 @@ def rk4_step(rhs, t: float, y: np.ndarray, dt: float, **params) -> np.ndarray:
     RK4 is a standard reference integrator, but it does not guarantee positivity for
     arbitrary step sizes; a large dt may produce a slightly negative component.
     """
-    if not np.isfinite(dt) or dt <= 0.0:
+    if np.asarray(t).ndim != 0 or not np.isfinite(t):
+        raise ValueError("t must be finite")
+    if np.asarray(dt).ndim != 0 or not np.isfinite(dt) or dt <= 0.0:
         raise ValueError("dt must be a finite positive step")
     y = np.asarray(y, dtype=float)
+    if y.ndim != 1:
+        raise ValueError("state vector must be one-dimensional")
     if not np.all(np.isfinite(y)):
         raise ValueError("state vector contains non-finite values")
     k1 = rhs(t, y, **params)
     k2 = rhs(t + 0.5 * dt, y + 0.5 * dt * k1, **params)
     k3 = rhs(t + 0.5 * dt, y + 0.5 * dt * k2, **params)
     k4 = rhs(t + dt, y + dt * k3, **params)
-    return y + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+    result = y + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+    if not np.all(np.isfinite(result)):
+        raise FloatingPointError("RK4 step produced non-finite values")
+    return result
 
 
 def solve_sir(
@@ -83,23 +111,17 @@ def solve_sir(
     The variables represent proportions of the total population (not absolute
     counts unless explicitly rescaled later).
     """
-    beta = _validate_positive_scalar(beta, "beta")
-    gamma = _validate_positive_scalar(gamma, "gamma")
-    s0 = _validate_positive_scalar(s0, "s0", allow_zero=True)
-    i0 = _validate_positive_scalar(i0, "i0", allow_zero=True)
-    r0 = _validate_positive_scalar(r0, "r0", allow_zero=True)
+    beta = _validate_positive_scalar(beta, "beta", allow_zero=True)
+    gamma = _validate_positive_scalar(gamma, "gamma", allow_zero=True)
+    initial_state = _validate_initial_state([s0, i0, r0])
     times = _validate_times(times)
 
     y = np.empty((times.size, 3), dtype=float)
-    y[0] = np.array([s0, i0, r0], dtype=float)
+    y[0] = initial_state
     for n in range(times.size - 1):
         h = times[n + 1] - times[n]
         y[n + 1] = rk4_step(sir_rhs, times[n], y[n], h, beta=beta, gamma=gamma)
-    if np.any(~np.isfinite(y)):
-        raise FloatingPointError("Non-finite values encountered during RK4 integration")
-    if np.any(y < -1e-12):
-        raise FloatingPointError("RK4 integration produced negative values; reduce the time step")
-    return y
+    return _validate_solution(y)
 
 
 def solve_seir(
@@ -113,25 +135,18 @@ def solve_seir(
     times: np.ndarray,
 ) -> np.ndarray:
     """Solve the SEIR model on a given time grid using RK4."""
-    beta = _validate_positive_scalar(beta, "beta")
-    sigma = _validate_positive_scalar(sigma, "sigma")
-    gamma = _validate_positive_scalar(gamma, "gamma")
-    s0 = _validate_positive_scalar(s0, "s0", allow_zero=True)
-    e0 = _validate_positive_scalar(e0, "e0", allow_zero=True)
-    i0 = _validate_positive_scalar(i0, "i0", allow_zero=True)
-    r0 = _validate_positive_scalar(r0, "r0", allow_zero=True)
+    beta = _validate_positive_scalar(beta, "beta", allow_zero=True)
+    sigma = _validate_positive_scalar(sigma, "sigma", allow_zero=True)
+    gamma = _validate_positive_scalar(gamma, "gamma", allow_zero=True)
+    initial_state = _validate_initial_state([s0, e0, i0, r0])
     times = _validate_times(times)
 
     y = np.empty((times.size, 4), dtype=float)
-    y[0] = np.array([s0, e0, i0, r0], dtype=float)
+    y[0] = initial_state
     for n in range(times.size - 1):
         h = times[n + 1] - times[n]
         y[n + 1] = rk4_step(seir_rhs, times[n], y[n], h, beta=beta, sigma=sigma, gamma=gamma)
-    if np.any(~np.isfinite(y)):
-        raise FloatingPointError("Non-finite values encountered during RK4 integration")
-    if np.any(y < -1e-12):
-        raise FloatingPointError("RK4 integration produced negative values; reduce the time step")
-    return y
+    return _validate_solution(y)
 
 
 def fit_exponential_series(
@@ -208,8 +223,8 @@ def _demo() -> None:
     times = np.linspace(0.0, 20.0, 250)
     sir = solve_sir(beta=0.6, gamma=0.2, s0=0.9, i0=0.1, r0=0.0, times=times)
     approx = fit_exponential_series(times, sir, n_terms=8, decay=0.22)
-    err = np.linalg.norm(sir - approx, ord=np.inf) / np.linalg.norm(sir, ord=np.inf)
-    print("SIR max relative error (finite exponential fit):", err)
+    err = np.max(np.abs(sir - approx)) / max(np.max(np.abs(sir)), 1e-12)
+    print("SIR relative elementwise sup-norm fit error (against RK4):", err)
     print("Final SIR state:", np.round(sir[-1], 6))
 
     seir = solve_seir(beta=0.7, sigma=0.3, gamma=0.2, s0=0.9, e0=0.05, i0=0.05, r0=0.0, times=times)
